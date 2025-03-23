@@ -4,7 +4,11 @@ This repository contains an advanced card detection and tracking system for blac
 
 ## Features
 
-- **Real-time card detection** using YOLOv8 model trained on playing cards
+- **Real-time card detection** using YOLOv8
+
+https://github.com/user-attachments/assets/2a1f8b0f-c364-4158-83e4-0f0f5ff53ae3
+
+ model trained on playing cards
 - **Consistent card tracking** with DeepSORT and/or custom tracking algorithms
 - **Re-identification (Re-ID)** to maintain card identity even after temporary disappearance
 - **Occlusion handling** using Mask R-CNN (in GPU version) or motion prediction (in CPU version)
