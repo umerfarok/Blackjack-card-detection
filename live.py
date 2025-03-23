@@ -21,6 +21,21 @@ print(f"Using device: {device}")
 model = YOLO("./best_23.pt")
 model.to(device)  # Move model to available device
 
+# GPU optimization settings
+if device == 'cuda':
+    # Enable TensorRT acceleration if available
+    model.fuse()  # Fuse model layers for better performance
+    # Set batch size to process more frames at once
+    batch_size = 4
+    torch.backends.cudnn.benchmark = True  # Enable cuDNN auto-tuner
+    torch.backends.cudnn.deterministic = False  # Better performance but less deterministic
+    print(f"CUDA optimization enabled. Using batch size: {batch_size}")
+    # Check available GPU memory
+    torch_mem = torch.cuda.get_device_properties(0).total_memory / 1e9  # Convert to GB
+    print(f"Total GPU memory: {torch_mem:.2f} GB")
+else:
+    batch_size = 1
+
 # Initialize our enhanced tracker
 tracker = Tracker()
 
@@ -28,7 +43,7 @@ tracker = Tracker()
 output_dir = "detections_1"
 os.makedirs(output_dir, exist_ok=True)
 
-# Define valid card classes
+# Define valid card classes (original format)
 card_classes = {
     '10c', '10d', '10h', '10s', '2c', '2d', '2h', '2s', '3c', '3d', '3h', '3s',
     '4c', '4d', '4h', '4s', '5c', '5d', '5h', '5s', '6c', '6d', '6h', '6s',
@@ -36,6 +51,47 @@ card_classes = {
     'ac', 'ad', 'ah', 'as', 'jc', 'jd', 'jh', 'js', 'kc', 'kd', 'kh', 'ks',
     'qc', 'qd', 'qh', 'qs'
 }
+
+# Add debugging flag
+DEBUG_LABELS = True
+# Create a dictionary to store detected class names for debugging
+detected_classes = {}
+
+# Helper function to normalize card labels between different formats
+def normalize_card_label(label):
+    """
+    Normalize card labels to a consistent format.
+    Can handle various input formats like '10c', '10_of_clubs', etc.
+    """
+    label = str(label).lower()
+    
+    # If already in our short format (e.g., '10c', 'as')
+    if label in card_classes:
+        return label
+        
+    # Handle potential format like '10_of_clubs', 'ace_of_spades', etc.
+    card_value_map = {
+        'ace': 'a', 'king': 'k', 'queen': 'q', 'jack': 'j',
+        'a': 'a', 'k': 'k', 'q': 'q', 'j': 'j',
+        '10': '10', '9': '9', '8': '8', '7': '7', '6': '6', 
+        '5': '5', '4': '4', '3': '3', '2': '2'
+    }
+    
+    suit_map = {
+        'clubs': 'c', 'diamonds': 'd', 'hearts': 'h', 'spades': 's',
+        'club': 'c', 'diamond': 'd', 'heart': 'h', 'spade': 's',
+        'c': 'c', 'd': 'd', 'h': 'h', 's': 's'
+    }
+    
+    # Try to extract value and suit from various formats
+    for val, short_val in card_value_map.items():
+        if val in label:
+            for suit, short_suit in suit_map.items():
+                if suit in label:
+                    return f"{short_val}{short_suit}"
+    
+    # If we couldn't parse it, return original label
+    return label
 
 class BufferReader(io.RawIOBase):
     def __init__(self):
@@ -110,12 +166,31 @@ def process_frame(frame, frame_idx):
     # Make a copy for processing
     img_proc = img.copy()
 
-    # Run YOLO inference
+    # Run YOLO inference with optimized settings
     try:
-        results = model(img_proc, conf=0.25, iou=0.45, verbose=False)
+        # Use half precision for faster inference
+        if device == 'cuda':
+            results = model(img_proc, conf=0.25, iou=0.45, verbose=False, half=True)
+        else:
+            results = model(img_proc, conf=0.25, iou=0.45, verbose=False)
     except Exception as e:
         print(f"[YOLO Error] {e}")
         return
+
+    # Debug: Print out class names to understand model output format
+    if DEBUG_LABELS and frame_idx % 30 == 0:  # Only print every 30 frames to avoid flooding console
+        print("\n--- Detected Classes Debug Info ---")
+        for result in results:
+            for box in result.boxes:
+                class_id = int(box.cls[0])
+                confidence = box.conf[0].item()
+                label = result.names[class_id]
+                # Store unique class names in our dictionary
+                if label not in detected_classes:
+                    detected_classes[label] = confidence
+                    print(f"New class detected: '{label}' with confidence {confidence:.2f}")
+        print(f"All detected classes so far: {list(detected_classes.keys())}")
+        print("-----------------------------------\n")
 
     # Format detections for tracker
     detections = []
@@ -127,9 +202,12 @@ def process_frame(frame, frame_idx):
             class_id = int(box.cls[0])
             label = result.names[class_id]
             
-            # Only process valid card classes with sufficient confidence
-            if str(label).lower() in card_classes and confidence >= 0.25:
-                detections.append([x1, y1, x2, y2, confidence, label])
+            # Normalize the label to our expected format
+            normalized_label = normalize_card_label(label)
+            
+            # Check both original label and normalized label
+            if normalized_label in card_classes and confidence >= 0.25:
+                detections.append([x1, y1, x2, y2, confidence, normalized_label])
 
     # Update tracker with current frame detections
     try:
