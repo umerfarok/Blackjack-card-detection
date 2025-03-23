@@ -254,7 +254,7 @@ def start_decoder():
 
 async def websocket_worker():
     """ WebSocket connection handler """
-    uri = "wss://ws1.zigdpseatvkmftqo.net/BJ5.1?JSESSIONID=20AGRCD3c59DjD_gtLPM16if7ZVmv1_KhPgnNSVD4XGrjy1X4SZ5!98817579-aa178660"
+    uri = "Live- video Url"
     
     try:
         async with websockets.connect(uri) as ws:
