@@ -18,7 +18,7 @@ print(f"Using device: {device}")
 
 # Load the fine-tuned YOLO model with CUDA if available
 # model = YOLO("./1-3_blackjack.pt")
-model = YOLO("./best_23.pt")
+model = YOLO("../models-yolo/best_23.pt")
 model.to(device)  # Move model to available device
 
 # GPU optimization settings
